@@ -1,21 +1,53 @@
 #!/usr/bin/env python3
-"""
-create a web cach
-"""
+"""Defines the get_page function"""
+from functools import wraps
+from typing import Callable
+
 import redis
 import requests
-rc = redis.Redis()
-count = 0
+
+store = redis.Redis()
 
 
+def tracker(func: Callable) -> Callable:
+    """Tracks how many times get_page is called"""
+
+    @wraps(func)
+    def wrapper(url: str) -> str:
+        """Calls get_page and caches result"""
+
+        # Increment counter
+        count_key = "count:{}".format(url)
+        store.incr(count_key)
+
+        # Check if cached result exists
+        cached_key = "cached:{}".format(url)
+        cached_data = store.get(cached_key)
+        if cached_data:
+            return cached_data.decode("utf-8")
+
+        # Call url and cache result for 10 seconds
+        html = func(url)
+        # Cache result
+        store.set(cached_key, html)
+        store.expire(cached_key, 10)
+
+        return html
+
+    return wrapper
+
+
+@tracker
 def get_page(url: str) -> str:
-    """ get a page and cach value"""
-    rc.set(f"cached:{url}", count)
-    resp = requests.get(url)
-    rc.incr(f"count:{url}")
-    rc.setex(f"cached:{url}", 10, rc.get(f"cached:{url}"))
-    return resp.text
+    """Uses requests module to obtain the html content of a URL
 
+    Args:
+        url (str): url of the page
 
-if __name__ == "__main__":
-    get_page('http://slowwly.robertomurray.co.uk')
+    Returns:
+        str: returns html content
+    """
+
+    response = requests.get(url)
+
+    return response.text
